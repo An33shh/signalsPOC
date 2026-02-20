@@ -2,7 +2,7 @@
 # Run the full application stack (backend + frontend) in local development mode
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+ROOT_DIR="$SCRIPT_DIR"
 
 cleanup() {
     echo ""
@@ -118,7 +118,7 @@ for candidate in \
     fi
 done
 
-JAVA_HOME="$JAVA_HOME" $MVN -f "$SCRIPT_DIR/pom.xml" spring-boot:run -Dspring-boot.run.profiles=local &
+JAVA_HOME="$JAVA_HOME" $MVN -f "$ROOT_DIR/backend/pom.xml" spring-boot:run -Dspring-boot.run.profiles=local &
 BACKEND_PID=$!
 
 # --- Frontend ---
