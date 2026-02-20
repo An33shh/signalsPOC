@@ -1,0 +1,95 @@
+services:
+
+  # ── Database ────────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: signals-postgres
+    environment:
+      POSTGRES_DB: signalsdb
+      POSTGRES_USER: signals_user
+      POSTGRES_PASSWORD: signals_pass
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U signals_user -d signalsdb"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Ollama (dedicated AI sidecar — always running) ──────────────────────────
+  ollama:
+    image: ollama/ollama
+    container_name: signals-ollama
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+
+  # Pulls the base model and builds the product-tuned signals-poc model (runs once then exits)
+  ollama-init:
+    image: ollama/ollama
+    container_name: signals-ollama-init
+    depends_on:
+      ollama:
+        condition: service_healthy
+    volumes:
+      - ollama_data:/root/.ollama
+      - ./Modelfile:/Modelfile:ro
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+      BASE_MODEL: ${BASE_MODEL:-llama3.1:8b}
+    entrypoint: ["/bin/sh", "-c", "ollama pull $${BASE_MODEL} && ollama create signals-poc -f /Modelfile"]
+    restart: "no"
+
+  # ── Backend (Spring Boot) ───────────────────────────────────────────────────
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: signals-backend
+    environment:
+      SPRING_PROFILES_ACTIVE: dev
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/signalsdb
+      DB_USERNAME: signals_user
+      DB_PASSWORD: signals_pass
+      AI_OLLAMA_URL: http://ollama:11434
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-signals-poc}
+      # Connector keys — override via .env or environment
+      ASANA_ENABLED: ${ASANA_ENABLED:-false}
+      ASANA_API_KEY: ${ASANA_API_KEY:-}
+      LINEAR_ENABLED: ${LINEAR_ENABLED:-false}
+      LINEAR_API_KEY: ${LINEAR_API_KEY:-}
+      GITHUB_ENABLED: ${GITHUB_ENABLED:-false}
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      GITHUB_REPOSITORIES: ${GITHUB_REPOSITORIES:-}
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ollama:
+        condition: service_healthy
+
+  # ── Frontend (Vue 3 + nginx) ────────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: signals-frontend
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
+  ollama_data:
