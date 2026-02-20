@@ -1,0 +1,57 @@
+spring:
+  application:
+    name: signals-poc-test
+
+  datasource:
+    url: jdbc:h2:mem:testdb;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+    username: sa
+    password:
+    driver-class-name: org.h2.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    show-sql: true
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.H2Dialect
+
+  flyway:
+    enabled: false
+
+  security:
+    user:
+      name: testuser
+      password: testpass
+
+connectors:
+  asana:
+    enabled: false
+    api-url: https://app.asana.com/api/1.0
+    api-key: test-key
+    timeout-seconds: 30
+    retry-attempts: 3
+    rate-limit:
+      requests-per-minute: 150
+
+  linear:
+    enabled: false
+    api-url: https://api.linear.app/graphql
+    api-key: test-key
+    timeout-seconds: 30
+    retry-attempts: 3
+
+  github:
+    enabled: false
+    api-url: https://api.github.com
+    token: test-token
+    timeout-seconds: 30
+    repositories: test/repo
+
+signalspoc:
+  rate-limit:
+    enabled: false
+
+logging:
+  level:
+    com.signalspoc: DEBUG
