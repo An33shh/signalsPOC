@@ -64,6 +64,9 @@ application-dev.yml
 application-*.properties
 !application-test.yml
 
+# Backend-specific
+backend/target/
+
 # Frontend
 frontend/node_modules/
 frontend/dist/

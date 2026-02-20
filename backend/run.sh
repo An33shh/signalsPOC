@@ -2,6 +2,7 @@
 # Run the full application stack (backend + frontend) in local development mode
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 cleanup() {
     echo ""
@@ -83,7 +84,7 @@ if command -v ollama &>/dev/null; then
         echo "[ollama] signals-poc model already exists."
     else
         echo "[ollama] Building signals-poc model from Modelfile (pulling llama3.1:8b if needed)..."
-        ollama create signals-poc -f "$SCRIPT_DIR/Modelfile" && \
+        ollama create signals-poc -f "$ROOT_DIR/ai/Modelfile" && \
             echo "[ollama] signals-poc model ready." || \
             echo "[ollama] WARNING: signals-poc model build failed — falling back to llama3.1:8b"
     fi
@@ -128,9 +129,9 @@ if ! command -v npm &>/dev/null; then
     exit 1
 fi
 
-npm --prefix "$SCRIPT_DIR/frontend" install && \
+npm --prefix "$ROOT_DIR/frontend" install && \
 echo "[frontend] Starting Vite dev server..." && \
-npm --prefix "$SCRIPT_DIR/frontend" run dev &
+npm --prefix "$ROOT_DIR/frontend" run dev &
 FRONTEND_PID=$!
 
 echo ""

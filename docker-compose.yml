@@ -43,7 +43,7 @@ services:
         condition: service_healthy
     volumes:
       - ollama_data:/root/.ollama
-      - ./Modelfile:/Modelfile:ro
+      - ./ai/Modelfile:/Modelfile:ro
     environment:
       OLLAMA_HOST: http://ollama:11434
       BASE_MODEL: ${BASE_MODEL:-llama3.1:8b}
@@ -53,7 +53,7 @@ services:
   # ── Backend (Spring Boot) ───────────────────────────────────────────────────
   backend:
     build:
-      context: .
+      context: ./backend
       dockerfile: Dockerfile
     container_name: signals-backend
     environment:
