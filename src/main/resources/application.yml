@@ -1,0 +1,104 @@
+spring:
+  application:
+    name: signals-poc
+
+  datasource:
+    url: jdbc:postgresql://localhost:5432/signalsdb
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 5
+      connection-timeout: 30000
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+        jdbc:
+          batch_size: 20
+        order_inserts: true
+        order_updates: true
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+
+# Connector configurations
+connectors:
+  asana:
+    enabled: ${ASANA_ENABLED:false}
+    api-url: https://app.asana.com/api/1.0
+    api-key: ${ASANA_API_KEY:}
+    timeout-seconds: 30
+    retry-attempts: 3
+    rate-limit:
+      requests-per-minute: 150
+
+  linear:
+    enabled: ${LINEAR_ENABLED:false}
+    api-url: https://api.linear.app/graphql
+    api-key: ${LINEAR_API_KEY:}
+    timeout-seconds: 30
+    retry-attempts: 3
+
+  github:
+    enabled: ${GITHUB_ENABLED:false}
+    api-url: https://api.github.com
+    token: ${GITHUB_TOKEN:}
+    timeout-seconds: 30
+    repositories: ${GITHUB_REPOSITORIES:}  # Comma-separated list: owner/repo,owner/repo2
+
+# Application-specific settings
+signals:
+  sync:
+    batch-size: 100
+    parallel-enabled: false
+    error-threshold: 10
+
+# Server configuration
+server:
+  port: 8080
+  # HTTPS/TLS Configuration (uncomment and configure for production)
+  # ssl:
+  #   enabled: true
+  #   key-store: classpath:keystore.p12
+  #   key-store-password: ${SSL_KEYSTORE_PASSWORD}
+  #   key-store-type: PKCS12
+  #   key-alias: signalspoc
+
+# Security configuration
+security:
+  jwt:
+    secret-key: ${JWT_SECRET_KEY:defaultSecretKeyForDevelopmentOnlyChangeInProduction123456}
+    expiration-ms: 86400000  # 24 hours
+
+# Actuator - restrict sensitive endpoints
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: when-authorized
+
+# Logging - use INFO in production, DEBUG only in dev profile
+logging:
+  level:
+    com.signalspoc: INFO
+    org.springframework.web: INFO
+    org.hibernate.SQL: WARN
+
+# OpenAPI
+springdoc:
+  api-docs:
+    path: /api-docs
+  swagger-ui:
+    path: /swagger-ui.html
