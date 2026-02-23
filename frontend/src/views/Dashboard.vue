@@ -123,14 +123,10 @@ onMounted(async () => {
     recentAlerts.value = alerts.data.content || []
 
     const connectors = ['asana', 'linear', 'github']
-    for (const c of connectors) {
-      try {
-        const test = await syncApi.testConnection(c)
-        platforms.value[c] = test.data.connected
-      } catch (e) {
-        platforms.value[c] = false
-      }
-    }
+    const results = await Promise.allSettled(connectors.map(c => syncApi.testConnection(c)))
+    connectors.forEach((c, i) => {
+      platforms.value[c] = results[i].status === 'fulfilled' && results[i].value.data.connected
+    })
   } catch (e) {
     console.error(e)
   }
