@@ -124,7 +124,7 @@ const loadCount = async () => {
   try {
     const res = await alertsApi.getUnreadCount()
     unreadCount.value = res.data.count || 0
-  } catch (e) {}
+  } catch (e) { console.warn('Failed to load unread count', e) }
 }
 
 const markRead = async (alert) => {
