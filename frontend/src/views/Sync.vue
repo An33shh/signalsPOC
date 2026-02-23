@@ -51,8 +51,8 @@
             <span class="log-status" :class="log.status?.toLowerCase()">{{ log.status }}</span>
           </div>
           <div class="log-right">
-            <span>{{ log.recordsProcessed || 0 }} records</span>
-            <span class="text-muted">{{ formatTime(log.startedAt) }}</span>
+            <span>{{ (log.projectsSynced || 0) + (log.tasksSynced || 0) + (log.usersSynced || 0) + (log.commentsSynced || 0) }} records</span>
+            <span class="text-muted">{{ formatTime(log.startTime) }}</span>
           </div>
         </div>
       </div>
@@ -107,7 +107,7 @@ const sync = async (c) => {
 const loadLogs = async () => {
   logsLoading.value = true
   try {
-    const res = await syncApi.getLogs({ page: 0, size: 10, sort: 'startedAt,desc' })
+    const res = await syncApi.getLogs({ page: 0, size: 10, sort: 'startTime,desc' })
     logs.value = res.data.content || []
   } catch (e) {
     console.error(e)
