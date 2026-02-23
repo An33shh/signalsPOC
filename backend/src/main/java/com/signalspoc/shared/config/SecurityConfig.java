@@ -18,6 +18,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.provisioning.InMemoryUserDetailsManager;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.web.authentication.www.BasicAuthenticationEntryPoint;
 import org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
@@ -98,8 +99,10 @@ public class SecurityConfig {
                 // Add rate limiting filter after authentication
                 .addFilterAfter(rateLimitingFilter, UsernamePasswordAuthenticationFilter.class)
 
-                // Support HTTP Basic for initial token acquisition (optional fallback)
-                .httpBasic(basic -> {});
+                // HTTP Basic kept for programmatic clients (curl, tests) but the
+                // WWW-Authenticate header is suppressed so browsers never show a popup.
+                // The Vue frontend handles 401s via its own login page redirect.
+                .httpBasic(basic -> basic.authenticationEntryPoint(silentEntryPoint()));
 
         return http.build();
     }
@@ -109,7 +112,6 @@ public class SecurityConfig {
         CorsConfiguration configuration = new CorsConfiguration();
         // In production, replace with actual allowed origins
         configuration.setAllowedOrigins(List.of(
-                "http://localhost:3000",
                 "http://localhost:5173",
                 "http://localhost:8080"
         ));
@@ -149,6 +151,25 @@ public class SecurityConfig {
     @Bean
     public AuthenticationManager authenticationManager(AuthenticationConfiguration config) throws Exception {
         return config.getAuthenticationManager();
+    }
+
+    @Bean
+    public BasicAuthenticationEntryPoint silentEntryPoint() {
+        // Returns 401 JSON without a WWW-Authenticate header — prevents browsers
+        // from showing their native Basic auth popup dialog.
+        BasicAuthenticationEntryPoint ep = new BasicAuthenticationEntryPoint() {
+            @Override
+            public void commence(jakarta.servlet.http.HttpServletRequest request,
+                                 jakarta.servlet.http.HttpServletResponse response,
+                                 org.springframework.security.core.AuthenticationException e)
+                    throws java.io.IOException {
+                response.setStatus(jakarta.servlet.http.HttpServletResponse.SC_UNAUTHORIZED);
+                response.setContentType("application/json");
+                response.getWriter().write("{\"error\":\"Unauthorized\"}");
+            }
+        };
+        ep.setRealmName("signals-poc");
+        return ep;
     }
 
     @Bean
