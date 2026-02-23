@@ -1,24 +1,54 @@
-# Signals POC
+# Signals
 
-A cross-platform project management synchronization system that monitors GitHub pull requests against Asana and Linear tasks, detects sync discrepancies, and uses a locally-running Ollama AI model to recommend and execute automated fixes.
+> Cross-platform project-management intelligence that detects task/PR discrepancies and closes the loop automatically — with on-premise AI, human-in-the-loop approval, and pluggable connector modules.
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-violet.svg)](LICENSE)
+[![Java](https://img.shields.io/badge/Java-17-orange.svg)](https://openjdk.org/projects/jdk/17/)
+[![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.2.2-brightgreen.svg)](https://spring.io/projects/spring-boot)
+[![Vue](https://img.shields.io/badge/Vue-3-42b883.svg)](https://vuejs.org/)
+[![Tests](https://img.shields.io/badge/tests-88%20passing-brightgreen.svg)](#testing)
+
+---
+
+## What It Does
+
+Engineering teams lose hours every week to status drift — a PR merges but the Linear or Asana ticket still says *In Progress*, or a task is marked done but the PR is still open. Signals fixes this automatically:
+
+1. **Ingests** projects, tasks, users and comments from Asana, Linear and GitHub on a schedule or on-demand.
+2. **Detects** discrepancies between PM task state and GitHub PR state using a fast rule engine (no AI in the hot path).
+3. **Enriches** every alert with an on-premise Ollama LLM recommendation (plain-text suggestion + structured action).
+4. **Acts** — one-click or policy-approved write-back updates the task status, posts an audit comment, and labels the PR.
+
+---
 
 ## How It Works
 
 ```
-Asana / Linear / GitHub APIs
+Asana · Linear · GitHub APIs
          │
-         ▼ (sync every 5 min or on demand)
-  Spring Boot Backend (:8080)
-    ├── SyncOrchestrator       — pulls tasks, projects, users, comments into H2/Postgres
-    ├── SyncDiscrepancyDetector — rule-based PR↔task mismatch detection (no AI, fast)
-    │       └── publishes AlertEnrichmentEvent on new alert
-    └── AiEnrichmentWorker     — async, picks up event, calls Ollama, patches alert
+         ▼  (scheduled every 5 min, or on-demand via REST/UI)
+┌─────────────────────────────────────────────────────┐
+│               Spring Boot Backend (:8080)            │
+│                                                      │
+│  SyncOrchestrator          ← PmConnectorService      │
+│    auto-discovers connectors via Spring DI           │
+│    writes to H2 (dev) / Postgres (prod)              │
+│                                                      │
+│  SyncDiscrepancyDetector   ← rule-based, fast        │
+│    publishes AlertEnrichmentEvent                    │
+│                                                      │
+│  AiEnrichmentWorker        ← @Async, off hot-path    │
+│    calls Ollama → patches alert with suggestion      │
+│                                                      │
+│  AlertActionExecutor       ← write-back              │
+│    updateTaskStatus / addComment / completeTask      │
+└─────────────────────────────────────────────────────┘
          │
          ▼
-  Ollama (:11434) — signals-poc custom model (llama3.1:8b base, tuned Modelfile)
+  Ollama (:11434) — signals-poc model (llama3.1:8b + Modelfile)
          │
          ▼
-  Vue.js Frontend (:5173) — dashboard, alerts, one-click action execution
+  Vue 3 Frontend (:5173) — dashboard, alerts, one-click approval
 ```
 
 ---
@@ -27,24 +57,88 @@ Asana / Linear / GitHub APIs
 
 | Layer | Technology |
 |---|---|
-| Backend | Java 17, Spring Boot 3.2.2 |
-| AI | Ollama (local), custom `signals-poc` model (llama3.1:8b base) |
-| Database | H2 (local dev) / PostgreSQL (production) |
-| ORM | Spring Data JPA + Hibernate |
+| Backend | Java 17, Spring Boot 3.2.2, Spring Security |
+| ORM | Spring Data JPA + Hibernate, Flyway migrations |
+| AI | Ollama (local LLM), custom `signals-poc` model (llama3.1:8b) |
+| Database | H2 in-memory (local dev) / PostgreSQL 16 (production) |
+| Auth | JWT (stateless) + BCrypt + rate limiting (Bucket4j) |
 | API Docs | OpenAPI 3 / Swagger UI |
-| Frontend | Vue 3 + Vite + Pinia |
-| Auth | JWT (stateless) + HTTP Basic fallback |
+| Frontend | Vue 3, Vite, Pinia, Vue Router |
+| Build | Maven 3.8+, multi-stage Docker, Docker Compose |
+| Testing | JUnit 5, Mockito (strict), AssertJ — 88 tests |
 
 ---
 
-## Quick Start (Local — No Docker Required)
+## Project Structure
+
+```
+signals-poc/
+├── LICENSE
+├── README.md
+├── run.sh                          # Full-stack launcher (Ollama + backend + frontend)
+├── docker-compose.yml              # Production stack (Postgres + Ollama + backend + frontend)
+│
+├── ai/
+│   └── Modelfile                   # Custom Ollama model definition (signals-poc)
+│
+├── backend/
+│   ├── Dockerfile                  # Multi-stage: Maven build → slim JRE image
+│   ├── pom.xml
+│   └── src/
+│       ├── main/
+│       │   ├── java/com/signalspoc/
+│       │   │   ├── SignalsApplication.java
+│       │   │   ├── ai/             # Ollama client, enrichment worker, scheduler
+│       │   │   ├── api/            # REST controllers (7), DTOs, GlobalExceptionHandler
+│       │   │   ├── connector/
+│       │   │   │   ├── api/        # ConnectorService (base interface)
+│       │   │   │   ├── model/      # ConnectorProject/Task/User/Comment, SyncResult
+│       │   │   │   ├── pm/         # PM module — PmConnectorService interface
+│       │   │   │   │   ├── api/    #   syncAll/Tasks/Projects + updateStatus/addComment/completeTask
+│       │   │   │   │   ├── asana/  #   AsanaConnectorService, ApiClient, Mapper, Config, DTOs
+│       │   │   │   │   └── linear/ #   LinearConnectorService, ApiClient, Mapper, Config, DTOs
+│       │   │   │   ├── svc/        # SVC module — SvcConnectorService (stub, Phase 2)
+│       │   │   │   │   └── api/    #   GitHub, GitLab, Bitbucket will implement this
+│       │   │   │   ├── notification/ # Notification module — stub (Phase 2)
+│       │   │   │   │   └── api/    #   Slack, Teams, Discord will implement this
+│       │   │   │   └── github/     # GitHubConnectorService (ConnectorService — PR monitoring)
+│       │   │   ├── domain/         # Business logic
+│       │   │   │   ├── entity/     # User, Project, Task, Comment, SyncLog, SyncAlert
+│       │   │   │   ├── repository/ # Spring Data JPA repositories
+│       │   │   │   └── service/    # SyncOrchestrator, SyncDiscrepancyDetector,
+│       │   │   │                   # SyncAlertService, AlertActionExecutor, ...
+│       │   │   └── shared/
+│       │   │       ├── config/     # SecurityConfig, JwtAuthFilter, RateLimitingFilter
+│       │   │       ├── model/      # Enums.java (ConnectorType, Priority, SyncStatus)
+│       │   │       └── exception/  # Exceptions.java (ConnectorException, ResourceNotFoundException)
+│       │   └── resources/
+│       │       ├── application.yml
+│       │       ├── application-local.yml  # H2, all connectors via env vars (gitignored)
+│       │       └── application-prod.yml   # Postgres, SSL, minimal logging
+│       └── test/
+│           └── java/com/signalspoc/       # 88 unit tests
+│
+└── frontend/
+    ├── Dockerfile                  # Multi-stage: Vite build → nginx:alpine
+    ├── nginx.conf                  # SPA fallback + /api proxy to backend
+    ├── vite.config.js
+    └── src/
+        ├── views/                  # Dashboard, Projects, Tasks, Users, Sync, Alerts, Login
+        ├── stores/                 # Pinia (auth store)
+        ├── api/                    # Axios client with JWT interceptor
+        └── router/
+```
+
+---
+
+## Quick Start — Local (No Docker)
 
 ### Prerequisites
 
-- Java 17 (must be JDK 17, not 19/21 — Lombok requires it)
+- Java 17 (`JAVA_HOME` must point to JDK 17 or 19 — Lombok is incompatible with JDK 21+)
 - Maven 3.8+
 - Node.js 18+
-- Ollama ([ollama.com](https://ollama.com)) — for AI features
+- [Ollama](https://ollama.com) — for AI features (optional but recommended)
 
 ```bash
 ./run.sh
@@ -52,11 +146,11 @@ Asana / Linear / GitHub APIs
 
 `run.sh` automatically:
 1. Starts Ollama if not already running
-2. Builds the product-tuned `signals-poc` model from `Modelfile` (pulls `llama3.1:8b` if needed)
-3. Compiles and starts the Spring Boot backend (local profile, H2 in-memory DB)
+2. Builds the `signals-poc` model from `ai/Modelfile` (pulls `llama3.1:8b` if needed)
+3. Compiles and starts the Spring Boot backend on the `local` profile (H2 in-memory DB)
 4. Installs npm deps and starts the Vite dev server
 
-**Access points:**
+**Access points after startup:**
 
 | Service | URL |
 |---|---|
@@ -64,7 +158,7 @@ Asana / Linear / GitHub APIs
 | REST API | http://localhost:8080/api/v1 |
 | Swagger UI | http://localhost:8080/swagger-ui.html |
 | H2 Console | http://localhost:8080/h2-console |
-| Health | http://localhost:8080/actuator/health |
+| Health check | http://localhost:8080/actuator/health |
 | Ollama | http://localhost:11434 |
 
 **Default credentials:** `admin / admin123` or `user / user123`
@@ -73,40 +167,41 @@ Asana / Linear / GitHub APIs
 
 ## Connector Setup
 
-Configure API keys in `src/main/resources/application-local.yml` (local dev only):
+Copy `backend/src/main/resources/application-local.yml` (gitignored — never committed) and set your keys:
 
 ```yaml
 connectors:
   asana:
     enabled: true
-    api-key: ${ASANA_PAT:your-asana-pat-here}   # Settings → Apps → Personal Access Tokens
+    api-key: ${ASANA_API_KEY:your-asana-pat}      # Settings → Apps → Personal Access Tokens
 
   linear:
     enabled: true
-    api-key: ${LINEAR_API_KEY:your-linear-key}   # Settings → API → Personal API keys
+    api-key: ${LINEAR_API_KEY:your-linear-key}    # Settings → API → Personal API keys
 
   github:
     enabled: true
-    token: ${GITHUB_TOKEN:your-github-pat}        # Settings → Developer Settings → PAT (needs: repo scope)
-    repositories: ${GITHUB_REPOSITORIES:owner/repo-name}  # comma-separated
+    token: ${GITHUB_TOKEN:your-github-pat}         # Developer Settings → PAT (repo scope)
+    repositories: ${GITHUB_REPOSITORIES:owner/repo}  # comma-separated
 
 ai:
   ollama:
     enabled: true
-    model: ${OLLAMA_MODEL:signals-poc}            # custom model built from Modelfile
+    model: ${OLLAMA_MODEL:signals-poc}
 ```
 
-> **Important:** Restart the backend after changing any values — Spring Boot loads config once at startup.
+> Restart the backend after changing connector config — Spring loads it once at startup.
 
 ---
 
-## Production Setup (Docker Compose)
+## Production — Docker Compose
 
 ```bash
-# 1. Create .env file
+# 1. Create .env (never commit this file)
 cat > .env <<EOF
 DB_USERNAME=signals_user
-DB_PASSWORD=signals_pass
+DB_PASSWORD=change_me_in_prod
+JWT_SECRET_KEY=change_me_min_32_chars_in_prod
 ASANA_ENABLED=true
 ASANA_API_KEY=your_asana_pat
 LINEAR_ENABLED=true
@@ -114,130 +209,97 @@ LINEAR_API_KEY=your_linear_key
 GITHUB_ENABLED=true
 GITHUB_TOKEN=your_github_pat
 GITHUB_REPOSITORIES=owner/repo
-BASE_MODEL=llama3.1:8b        # base model to pull before building signals-poc
+OLLAMA_MODEL=signals-poc
+BASE_MODEL=llama3.1:8b
 EOF
 
-# 2. Start everything
+# 2. Start the full stack
 docker compose up -d
 ```
 
-On first start, `ollama-init` automatically pulls the base model and builds the `signals-poc` model from `Modelfile`. Subsequent starts reuse the cached model from the `ollama_data` volume.
+Services started:
+
+| Container | Port | Description |
+|---|---|---|
+| `signals-postgres` | 5432 | PostgreSQL 16 with health check |
+| `signals-ollama` | 11434 | Ollama LLM server |
+| `signals-ollama-init` | — | Pulls base model, builds signals-poc (runs once, exits) |
+| `signals-backend` | 8080 | Spring Boot API |
+| `signals-frontend` | 80 | Vue 3 SPA via nginx |
+
+---
+
+## Connector Architecture
+
+Each connector module is completely isolated. Adding a new PM connector (e.g. Jira) requires:
+
+1. Create `connector/pm/jira/` — implement `PmConnectorService`
+2. Add `@ConditionalOnProperty(name = "connectors.jira.enabled")`
+3. Add config to `application.yml`
+
+`SyncOrchestrator` and `AlertActionExecutor` auto-discover the new connector via `List<PmConnectorService>`. **Zero other files change.**
+
+```
+ConnectorService (base — identity + connectivity test)
+├── PmConnectorService         ← PM tools: sync + write-back
+│   ├── AsanaConnectorService  ✓ live
+│   └── LinearConnectorService ✓ live
+│   └── JiraConnectorService   (roadmap)
+├── SvcConnectorService        ← SVC tools: PR/branch data (Phase 2)
+│   └── GitHubConnectorService (partial — PR monitoring only)
+│   └── GitLabConnectorService (roadmap)
+└── NotificationConnectorService ← Alerts delivery (Phase 2)
+    └── SlackConnectorService  (roadmap)
+    └── TeamsConnectorService  (roadmap)
+```
 
 ---
 
 ## AI Architecture
 
-The AI layer is event-driven — Ollama is **never** in the critical path of detection:
+Ollama is **never** in the critical path for alert detection:
 
 ```
-SyncDiscrepancyDetector (every 5 min, rule-based, milliseconds)
-  ↓ saves alert to DB
-  ↓ publishes AlertEnrichmentEvent
-        ↓
-    AiEnrichmentWorker (@Async, dedicated thread pool)
-      → calls Ollama for plain-text suggestion
-      → calls Ollama for structured AiActionRecommendation (JSON)
-      → patches alert in DB with both results
+SyncDiscrepancyDetector  — rule-based, every 5 min, milliseconds
+  └── saves SyncAlert to DB
+  └── publishes AlertEnrichmentEvent
+          │
+          ▼ (async, dedicated thread pool)
+    AiEnrichmentWorker
+      ├── calls Ollama → plain-text aiSuggestion
+      └── calls Ollama → structured AiActionRecommendation (JSON)
+            └── AlertActionExecutor executes on approval
 
-AiAnalysisScheduler (every 30 min, @Scheduled)
-  → reconciles alerts that still have null aiSuggestion (missed by event worker)
-  → runs deep semantic batch analysis on changed PR-task pairs (SHA-256 checksum)
+AiAnalysisScheduler  — every 30 min
+  └── reconciles alerts with null aiSuggestion (missed events)
+  └── deep semantic analysis on changed PR-task pairs (SHA-256 diff)
 ```
 
-### Custom Ollama Model
-
-The `signals-poc` model is built from `Modelfile` at the project root:
+### Custom Model
 
 ```bash
 # Build manually (run.sh does this automatically)
-ollama create signals-poc -f Modelfile
+ollama create signals-poc -f ai/Modelfile
 ```
 
-Key tuning vs base llama3.1:8b:
-
-| Parameter | Base default | signals-poc |
+| Parameter | llama3.1:8b base | signals-poc |
 |---|---|---|
 | temperature | ~0.8 | 0.15 (deterministic) |
-| top_p | 0.9 | 0.9 |
-| repeat_penalty | 1.1 | 1.1 |
-| System prompt | none | product-specific (baked in) |
+| System prompt | none | product-tuned (baked in) |
+| Token saving | — | ~200 tokens/call (prompt in weights) |
 
-When using `signals-poc`, the system prompt is **not** re-sent on each request (it's already in the model weights) — saving ~200 input tokens per call.
-
-### Action Types
-
-When Ollama recommends an action, `AlertActionExecutor` can execute it automatically:
+### Write-back Actions
 
 | Action | Effect |
 |---|---|
 | `UPDATE_TASK_STATUS` | Moves Asana task / Linear issue to a new status |
-| `COMPLETE_TASK` | Marks task as done/complete |
-| `ADD_COMMENT` | Posts a comment to an Asana task or Linear issue |
-| `ADD_PR_COMMENT` | Posts a comment on the GitHub PR |
-| `UPDATE_PR_LABELS` | Sets labels on the GitHub PR |
-| `APPROVE_PR` | Submits an approved review on GitHub |
-| `NO_ACTION` | No automated action needed |
+| `COMPLETE_TASK` | Marks task as done |
+| `ADD_COMMENT` | Posts comment to Asana task or Linear issue |
+| `ADD_PR_COMMENT` | Posts comment on GitHub PR |
+| `UPDATE_PR_LABELS` | Sets labels on GitHub PR |
+| `APPROVE_PR` | Submits approved review on GitHub |
+| `NO_ACTION` | No action needed (audit comment still posted) |
 | `MANUAL_REVIEW` | Flags for human review |
-
----
-
-## Project Structure
-
-```
-signals-poc/
-├── Modelfile                              # Ollama model definition (signals-poc)
-├── run.sh                                 # Full stack launcher (Ollama + backend + frontend, local dev)
-├── run-local.sh                           # Alternative local launcher (H2, optional Ollama)
-├── docker-compose.yml                     # Production: Postgres + Ollama + backend + frontend
-│
-├── src/main/java/com/signalspoc/
-│   ├── SignalsApplication.java            # Main entry (@EnableAsync @EnableScheduling)
-│   │
-│   ├── ai/                               # AI layer
-│   │   ├── client/OllamaClient.java      # Ollama /api/generate calls
-│   │   ├── config/AiConfig.java          # ai.ollama.* properties
-│   │   ├── config/AsyncConfig.java       # Thread pools (aiAnalysisExecutor, aiEnrichmentExecutor)
-│   │   ├── event/AlertEnrichmentEvent.java  # Spring event: new alert → enrich with AI
-│   │   ├── model/AiActionRecommendation.java
-│   │   ├── model/AnalysisState.java      # Checksum state for change detection
-│   │   ├── repository/AnalysisStateRepository.java
-│   │   ├── service/AiEnrichmentWorker.java  # @Async event listener → calls Ollama → patches alert
-│   │   ├── service/AiAnalysisScheduler.java # 30-min reconciliation + semantic batch analysis
-│   │   ├── service/AiSuggestionService.java # Prompt building + Ollama call orchestration
-│   │   └── util/AnalysisChecksumUtil.java
-│   │
-│   ├── api/                              # REST layer
-│   │   ├── controller/                   # AlertController, AuthController, ProjectController,
-│   │   │                                 # TaskController, UserController, CommentController,
-│   │   │                                 # SyncController
-│   │   ├── dto/response/                 # Response DTOs
-│   │   └── exception/GlobalExceptionHandler.java
-│   │
-│   ├── connector/                        # External API adapters
-│   │   ├── api/                          # ConnectorService, WritableConnectorService interfaces
-│   │   ├── model/                        # Normalized: ConnectorProject/Task/User/Comment, SyncResult
-│   │   ├── asana/                        # REST API adapter
-│   │   ├── github/                       # REST API adapter (PR monitoring + write-back)
-│   │   └── linear/                       # GraphQL adapter
-│   │
-│   ├── domain/                           # Business logic
-│   │   ├── entity/                       # JPA: User, Project, Task, Comment, SyncLog, SyncAlert
-│   │   ├── repository/                   # Spring Data repositories
-│   │   └── service/                      # SyncOrchestrator, SyncDiscrepancyDetector,
-│   │                                     # SyncAlertService, AlertActionExecutor, ...
-│   │
-│   └── shared/
-│       ├── config/                       # SecurityConfig, JwtAuthFilter, RateLimitingFilter
-│       ├── model/Enums.java              # ConnectorType, Priority, SyncStatus
-│       └── exception/Exceptions.java     # ConnectorException, ResourceNotFoundException, SyncException
-│
-└── frontend/                             # Vue 3 SPA
-    └── src/
-        ├── views/                        # Dashboard, Projects, Tasks, Users, Sync, Alerts, Login
-        ├── stores/                       # Pinia (auth)
-        ├── api/                          # Axios client
-        └── router/
-```
 
 ---
 
@@ -246,13 +308,13 @@ signals-poc/
 ### Authentication
 
 ```bash
-# Get JWT token
+# Obtain JWT token
 curl -X POST http://localhost:8080/api/v1/auth/login \
   -H "Content-Type: application/json" \
   -d '{"username":"admin","password":"admin123"}'
 # → {"accessToken":"eyJ...","tokenType":"Bearer","expiresIn":86400}
 
-# Use token
+# Use token on all subsequent requests
 curl http://localhost:8080/api/v1/tasks \
   -H "Authorization: Bearer eyJ..."
 ```
@@ -261,15 +323,15 @@ curl http://localhost:8080/api/v1/tasks \
 
 | Method | Endpoint | Description |
 |---|---|---|
-| `GET` | `/api/v1/sync/{connector}/test` | Test connector connection |
-| `POST` | `/api/v1/sync/{connector}/all` | Full sync (users + projects + tasks + comments) |
+| `GET` | `/api/v1/sync/{connector}/test` | Test connector connectivity |
+| `POST` | `/api/v1/sync/{connector}/all` | Full sync (projects + tasks + users + comments) |
 | `POST` | `/api/v1/sync/{connector}/projects` | Sync projects only |
 | `POST` | `/api/v1/sync/{connector}/tasks` | Sync tasks only |
 | `POST` | `/api/v1/sync/{connector}/users` | Sync users only |
 | `POST` | `/api/v1/sync/{connector}/comments` | Sync comments only |
-| `GET` | `/api/v1/sync/logs` | Sync history |
+| `GET` | `/api/v1/sync/logs` | Paginated sync history |
 
-`{connector}`: `asana`, `linear`, `github`
+`{connector}`: `asana`, `linear` for sync operations; `github` for test only.
 
 ### Alerts
 
@@ -279,7 +341,7 @@ curl http://localhost:8080/api/v1/tasks \
 | `GET` | `/api/v1/alerts/unread` | Unread alerts |
 | `GET` | `/api/v1/alerts/count` | Unread count (for badge) |
 | `POST` | `/api/v1/alerts/{id}/read` | Mark as read |
-| `POST` | `/api/v1/alerts/{id}/resolve` | Mark as resolved |
+| `POST` | `/api/v1/alerts/{id}/resolve` | Resolve alert |
 | `POST` | `/api/v1/alerts/{id}/approve` | Execute AI-recommended action |
 
 ### Data
@@ -292,36 +354,72 @@ curl http://localhost:8080/api/v1/tasks \
 | `GET` | `/api/v1/users` | List users |
 | `GET` | `/api/v1/comments/task/{taskId}` | Comments for a task |
 
-**Common query params:** `sourceSystem` (ASANA/LINEAR/GITHUB), `page`, `size`, `sort`
+**Common query params:** `sourceSystem` (ASANA / LINEAR / GITHUB), `page`, `size`, `sort`
+
+Full interactive docs: **http://localhost:8080/swagger-ui.html**
+
+---
+
+## Security
+
+| Control | Implementation |
+|---|---|
+| Authentication | Stateless JWT (HS256, 24 h expiry) |
+| Password hashing | BCrypt |
+| Rate limiting | Bucket4j — 10 req/min per user per endpoint family |
+| CORS | Explicit allowlist (5173, 8080) |
+| Headers | CSP, X-Content-Type-Options, Referrer-Policy, Permissions-Policy |
+| Session | Stateless — no server-side session |
+| 401 responses | JSON body, no `WWW-Authenticate` header (prevents browser popup) |
+| AI actions | Human approval required by default; all actions audit-logged |
+| Secrets | Never committed — loaded from env vars or gitignored local YAML |
+
+---
+
+## Testing
+
+```bash
+cd backend
+JAVA_HOME=/Library/Java/JavaVirtualMachines/jdk-19.jdk/Contents/Home \
+  mvn test
+```
+
+88 tests across 7 test classes, all passing:
+
+| Test class | Coverage |
+|---|---|
+| `AsanaConnectorServiceTest` | Sync, mapping, error handling |
+| `LinearConnectorServiceTest` | GraphQL queries, mapping, errors |
+| `SyncOrchestratorTest` | Multi-connector orchestration, PM-only routing |
+| `SyncDiscrepancyDetectorTest` | All 4 alert cases (PR ready, closed, missing, stale) |
+| `AlertActionExecutorTest` | All action types, write-back, audit comments |
+| `TaskServiceTest` | CRUD, assignee resolution, project linking |
+| `SyncControllerTest` | Auth (401), PM-only routing (400 for GitHub sync), 500 on error |
+
+Rate limiting is disabled in the test profile (`application-test.yml`) to prevent bucket exhaustion.
 
 ---
 
 ## Environment Variables
 
-| Variable | Description | Default |
+| Variable | Description | Required |
 |---|---|---|
-| `ASANA_PAT` | Asana Personal Access Token | — |
-| `LINEAR_API_KEY` | Linear API key (`lin_api_...`) | — |
-| `GITHUB_TOKEN` | GitHub PAT (`repo` scope required) | — |
-| `GITHUB_REPOSITORIES` | Comma-separated `owner/repo` list | — |
-| `OLLAMA_ENABLED` | Enable AI features | `true` |
-| `OLLAMA_URL` | Ollama base URL | `http://localhost:11434` |
-| `OLLAMA_MODEL` | Model name to use | `signals-poc` |
-| `BASE_MODEL` | Base model for Docker build | `llama3.1:8b` |
-| `DB_USERNAME` | Postgres username (production) | — |
-| `DB_PASSWORD` | Postgres password (production) | — |
-| `JWT_SECRET_KEY` | JWT signing key (min 32 chars) | dev key |
-
----
-
-## Documentation
-
-- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — detailed component design and data flow
-- [docs/API.md](docs/API.md) — complete API reference with request/response examples
-- Swagger UI: http://localhost:8080/swagger-ui.html (interactive, always up to date)
+| `ASANA_API_KEY` | Asana Personal Access Token | For Asana |
+| `LINEAR_API_KEY` | Linear API key (`lin_api_...`) | For Linear |
+| `GITHUB_TOKEN` | GitHub PAT (`repo` scope) | For GitHub |
+| `GITHUB_REPOSITORIES` | Comma-separated `owner/repo` list | For GitHub |
+| `OLLAMA_MODEL` | Model name | No (default: `signals-poc`) |
+| `AI_OLLAMA_URL` | Ollama base URL | No (default: `http://localhost:11434`) |
+| `BASE_MODEL` | Base model for Docker init | No (default: `llama3.1:8b`) |
+| `DB_USERNAME` | Postgres username | Production |
+| `DB_PASSWORD` | Postgres password | Production |
+| `JWT_SECRET_KEY` | JWT signing key (min 32 chars) | Production |
+| `SERVER_PORT` | Backend port override | No (default: `8080`) |
 
 ---
 
 ## License
 
-MIT
+This project is licensed under the **MIT License** — see [LICENSE](LICENSE) for full terms.
+
+You are free to use, modify and distribute this software with attribution. Copyright © 2026 Aneesh.
