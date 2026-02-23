@@ -18,6 +18,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
@@ -35,12 +36,11 @@ public class AlertActionExecutor {
 
     private Map<ConnectorType, PmConnectorService> pmConnectorMap;
 
-    @Autowired
     public AlertActionExecutor(SyncAlertRepository alertRepository,
-                                @Autowired(required = false) List<PmConnectorService> pmConnectorServices,
-                                @Autowired(required = false) GitHubApiClient gitHubApiClient,
-                                @Autowired(required = false) GitHubConfig gitHubConfig,
-                                ObjectMapper objectMapper) {
+                               @Autowired(required = false) List<PmConnectorService> pmConnectorServices,
+                               @Autowired(required = false) GitHubApiClient gitHubApiClient,
+                               @Autowired(required = false) GitHubConfig gitHubConfig,
+                               ObjectMapper objectMapper) {
         this.alertRepository = alertRepository;
         this.pmConnectorServices = pmConnectorServices != null ? pmConnectorServices : List.of();
         this.gitHubApiClient = gitHubApiClient;
@@ -282,7 +282,8 @@ public class AlertActionExecutor {
         }
 
         String labelsStr = rec.getParameters() != null ? rec.getParameters().get("labels") : "";
-        List<String> labels = List.of(labelsStr.split(","));
+        List<String> labels = Arrays.stream(labelsStr.split(","))
+                .map(String::trim).filter(s -> !s.isBlank()).toList();
 
         PRInfo prInfo = parsePRUrl(alert.getSourceUrl());
         if (prInfo != null) {
