@@ -2,7 +2,6 @@
 
 > Cross-platform project-management intelligence that detects task/PR discrepancies and closes the loop automatically — with on-premise AI, human-in-the-loop approval, and pluggable connector modules.
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-violet.svg)](LICENSE)
 [![Java](https://img.shields.io/badge/Java-17-orange.svg)](https://openjdk.org/projects/jdk/17/)
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.2.2-brightgreen.svg)](https://spring.io/projects/spring-boot)
 [![Vue](https://img.shields.io/badge/Vue-3-42b883.svg)](https://vuejs.org/)
@@ -418,8 +417,3 @@ Rate limiting is disabled in the test profile (`application-test.yml`) to preven
 
 ---
 
-## License
-
-This project is licensed under the **MIT License** — see [LICENSE](LICENSE) for full terms.
-
-You are free to use, modify and distribute this software with attribution. Copyright © 2026 Aneesh.
