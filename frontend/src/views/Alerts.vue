@@ -11,6 +11,11 @@
       </div>
     </div>
 
+    <div v-if="approveError" class="error-banner">
+      <span>{{ approveError }}</span>
+      <button class="btn-close" @click="approveError = null">✕</button>
+    </div>
+
     <div v-if="loading" class="loading">Loading...</div>
 
     <div v-else-if="items.length === 0" class="empty">
@@ -82,6 +87,7 @@ const filter = ref('unread')
 const unreadCount = ref(0)
 const approving = ref({})
 const confirmAlert = ref(null)
+const approveError = ref(null)
 
 const severityTag = (s) => {
   if (s === 'CRITICAL') return 'tag-error'
@@ -90,8 +96,9 @@ const severityTag = (s) => {
 }
 
 const isActionable = (alert) => {
-  const actionableTypes = ['PR_MERGED_TASK_OPEN', 'PR_READY_TASK_NOT_UPDATED', 'STALE_PR']
-  return actionableTypes.includes(alert.alertType) && alert.targetSystem
+  if (alert.alertType === 'STALE_PR') return !!alert.sourceUrl
+  const actionableTypes = ['PR_MERGED_TASK_OPEN', 'PR_READY_TASK_NOT_UPDATED']
+  return actionableTypes.includes(alert.alertType) && !!alert.targetSystem
 }
 
 const formatTime = (d) => {
@@ -147,14 +154,20 @@ const showApproveConfirm = (alert) => { confirmAlert.value = alert }
 
 const approve = async (alert) => {
   confirmAlert.value = null
+  approveError.value = null
   approving.value[alert.id] = true
   try {
     const res = await alertsApi.approve(alert.id)
     if (res.data.success) {
       items.value = items.value.filter(a => a.id !== alert.id)
       loadCount()
+    } else {
+      approveError.value = res.data.description || 'Action could not be executed.'
     }
-  } catch (e) { console.error(e) }
+  } catch (e) {
+    approveError.value = e.response?.data?.message || 'Unexpected error executing action.'
+    console.error(e)
+  }
   approving.value[alert.id] = false
 }
 
@@ -355,4 +368,27 @@ onMounted(() => { load(); loadCount() })
 
 .fade-enter-active, .fade-leave-active { transition: opacity 200ms var(--ease); }
 .fade-enter-from, .fade-leave-to { opacity: 0; }
+
+.error-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-3) var(--space-4);
+  margin-bottom: var(--space-4);
+  background: var(--error-dim);
+  border: 1px solid var(--error);
+  border-radius: var(--radius);
+  font-size: 13px;
+  color: var(--error);
+}
+
+.btn-close {
+  background: none;
+  border: none;
+  color: var(--error);
+  cursor: pointer;
+  font-size: 14px;
+  padding: 0 var(--space-1);
+  line-height: 1;
+}
 </style>
