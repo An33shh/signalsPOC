@@ -10,9 +10,11 @@
         </select>
         <select v-model="status" @change="page = 0; load()">
           <option value="">All statuses</option>
-          <option value="OPEN">Open</option>
-          <option value="IN_PROGRESS">In Progress</option>
-          <option value="COMPLETED">Done</option>
+          <option value="open">Open</option>
+          <option value="in progress">In Progress</option>
+          <option value="in review">In Review</option>
+          <option value="completed">Completed</option>
+          <option value="cancelled">Cancelled</option>
         </select>
       </div>
     </div>

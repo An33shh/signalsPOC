@@ -52,7 +52,7 @@ public class LinearMapper {
                 .sourceSystem(ConnectorType.LINEAR)
                 .title(dto.getIdentifier() + ": " + dto.getTitle())
                 .description(dto.getDescription())
-                .status(dto.getState() != null ? dto.getState().getName() : null)
+                .status(dto.getState() != null ? normalizeStatus(dto.getState().getName()) : null)
                 .priority(mapPriority(dto.getPriority()))
                 .projectExternalId(dto.getProject() != null ? dto.getProject().getId() :
                                    (dto.getTeam() != null ? dto.getTeam().getId() : null))
@@ -76,6 +76,19 @@ public class LinearMapper {
                 .authorExternalId(dto.getUser() != null ? dto.getUser().getId() : null)
                 .createdAt(toLocalDateTime(dto.getCreatedAt()))
                 .build();
+    }
+
+    /** Normalise Linear team-defined state names to a small consistent vocabulary. */
+    private String normalizeStatus(String name) {
+        if (name == null) return null;
+        String lower = name.toLowerCase();
+        if (lower.contains("cancel") || lower.contains("duplicate"))         return "cancelled";
+        if (lower.contains("done") || lower.contains("complet"))             return "completed";
+        if (lower.contains("review"))                                        return "in review";
+        if (lower.contains("progress") || lower.contains("started"))        return "in progress";
+        if (lower.contains("todo") || lower.contains("backlog")
+                || lower.contains("triage") || lower.contains("unstarted")) return "open";
+        return lower;
     }
 
     private Priority mapPriority(Integer linearPriority) {
