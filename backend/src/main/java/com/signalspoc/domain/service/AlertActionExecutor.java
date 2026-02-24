@@ -84,7 +84,9 @@ public class AlertActionExecutor {
                 alert.setIsRead(true);
                 alertRepository.save(alert);
 
-                addAuditComments(alert, result);
+                if (!"NO_ACTION".equals(result.getActionTaken())) {
+                    addAuditComments(alert, result);
+                }
             }
 
             return result;
@@ -356,22 +358,31 @@ public class AlertActionExecutor {
     }
 
     private ActionResult handleStalePR(SyncAlert alert) {
-        if (gitHubApiClient != null && gitHubConfig != null && alert.getSourceUrl() != null) {
-            PRInfo prInfo = parsePRUrl(alert.getSourceUrl());
-            if (prInfo != null) {
-                gitHubApiClient.addPRComment(prInfo.owner, prInfo.repo, prInfo.number,
-                        "[Signals] This PR has been flagged as stale (open > 7 days). Please review or close if no longer needed.");
-                return ActionResult.builder()
-                        .success(true)
-                        .actionTaken("ADD_PR_COMMENT")
-                        .description("Added stale PR reminder comment to GitHub")
-                        .build();
-            }
+        if (gitHubApiClient == null) {
+            return ActionResult.builder()
+                    .success(false)
+                    .description("GitHub connector is not enabled — cannot comment on stale PR")
+                    .build();
         }
-
+        if (alert.getSourceUrl() == null) {
+            return ActionResult.builder()
+                    .success(false)
+                    .description("Alert has no source URL — cannot locate PR")
+                    .build();
+        }
+        PRInfo prInfo = parsePRUrl(alert.getSourceUrl());
+        if (prInfo == null) {
+            return ActionResult.builder()
+                    .success(false)
+                    .description("Could not parse PR URL: " + alert.getSourceUrl())
+                    .build();
+        }
+        gitHubApiClient.addPRComment(prInfo.owner, prInfo.repo, prInfo.number,
+                "[Signals] This PR has been flagged as stale (open > 7 days). Please review or close if no longer needed.");
         return ActionResult.builder()
-                .success(false)
-                .description("Could not parse PR information from alert")
+                .success(true)
+                .actionTaken("ADD_PR_COMMENT")
+                .description("Added stale PR reminder comment to GitHub")
                 .build();
     }
 

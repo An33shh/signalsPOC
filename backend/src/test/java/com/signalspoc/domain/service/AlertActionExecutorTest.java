@@ -216,8 +216,8 @@ class AlertActionExecutorTest {
         assertThat(result.getActionTaken()).isEqualTo("NO_ACTION");
         verify(asanaConnector, never()).completeTask(any());
         verify(asanaConnector, never()).updateTaskStatus(any(), any());
-        // addAuditComments always fires — verify only the audit trail comment
-        verify(asanaConnector, times(1)).addComment(eq("task-1"), contains("[Signals] Auto-action executed"));
+        // NO_ACTION should not trigger an audit comment
+        verify(asanaConnector, never()).addComment(any(), any());
     }
 
     @Test
