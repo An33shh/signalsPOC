@@ -89,6 +89,8 @@ public class SyncDiscrepancyDetector {
                     .sourceSystem(ConnectorType.GITHUB)
                     .sourceId(String.valueOf(pr.getId()))
                     .sourceUrl(pr.getHtmlUrl())
+                    .targetSystem(ConnectorType.GITHUB)
+                    .targetId(String.valueOf(pr.getId()))
                     .build()), pr, null);
         }
     }
@@ -167,7 +169,7 @@ public class SyncDiscrepancyDetector {
     }
 
     private List<Task> findAllTasksByIdentifier(String identifier) {
-        List<Task> tasks = taskRepository.findByTitleContaining(identifier);
+        List<Task> tasks = new java.util.ArrayList<>(taskRepository.findByTitleContaining(identifier));
         Optional<Task> byExternalId = taskRepository.findByExternalId(identifier);
         if (byExternalId.isPresent() && tasks.stream().noneMatch(t -> t.getId().equals(byExternalId.get().getId()))) {
             tasks.add(byExternalId.get());
